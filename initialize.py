@@ -43,7 +43,7 @@ def initialize():
     # ログ出力の設定
     initialize_logger()
     # RAGのRetrieverを作成
-    initialize_retriever()
+    initialize_retriever(chunk_size=ct.CHUNK_SIZE, chunk_overlap=ct.CHUNK_OVERLAP)
 
 
 def initialize_logger():
@@ -98,7 +98,7 @@ def initialize_session_id():
         st.session_state.session_id = uuid4().hex
 
 
-def initialize_retriever():
+def initialize_retriever(chunk_size=ct.CHUNK_SIZE, chunk_overlap=ct.CHUNK_OVERLAP):
     """
     画面読み込み時にRAGのRetriever（ベクターストアから検索するオブジェクト）を作成
     """
@@ -123,8 +123,8 @@ def initialize_retriever():
     
     # チャンク分割用のオブジェクトを作成
     text_splitter = CharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
         separator="\n"
     )
 
@@ -135,7 +135,7 @@ def initialize_retriever():
     db = Chroma.from_documents(splitted_docs, embedding=embeddings)
 
     # ベクターストアを検索するRetrieverの作成
-    st.session_state.retriever = db.as_retriever(search_kwargs={"k": 3})
+    st.session_state.retriever = db.as_retriever(search_kwargs={"k": 5})
 
 
 def initialize_session_state():
