@@ -129,11 +129,16 @@ def initialize_retriever(chunk_size=ct.CHUNK_SIZE, chunk_overlap=ct.CHUNK_OVERLA
     )
 
     # チャンク分割を実施
-    splitted_docs = text_splitter.split_documents(docs_all)
+#    splitted_docs = text_splitter.split_documents(docs_all)
+    no_split_docs = [d for d in docs_all if d.metadata.get("no_split")]
+    split_targets = [d for d in docs_all if not d.metadata.get("no_split")]
 
+    split_docs = text_splitter.split_documents(split_targets)
+    final_docs = no_split_docs + split_docs  # ← これを以降に使う
+    
     # ベクターストアの作成
-    db = Chroma.from_documents(splitted_docs, embedding=embeddings)
-
+#    db = Chroma.from_documents(splitted_docs, embedding=embeddings)
+    db = Chroma.from_documents(final_docs, embedding=embeddings)
     # ベクターストアを検索するRetrieverの作成
     st.session_state.retriever = db.as_retriever(search_kwargs={"k": 5})
 
@@ -198,27 +203,73 @@ def recursive_file_check(path, docs_all):
         # パスがファイルの場合、ファイル読み込み
         file_load(path, docs_all)
 
-
 def file_load(path, docs_all):
-    """
-    ファイル内のデータ読み込み
+    import os, csv
+    from langchain_core.documents import Document
 
-    Args:
-        path: ファイルパス
-        docs_all: データソースを格納する用のリスト
-    """
-    # ファイルの拡張子を取得
-    file_extension = os.path.splitext(path)[1]
-    # ファイル名（拡張子を含む）を取得
-    file_name = os.path.basename(path)
+    file_extension = os.path.splitext(path)[1].lower()
 
-    # 想定していたファイル形式の場合のみ読み込む
-    if file_extension in ct.SUPPORTED_EXTENSIONS:
-        # ファイルの拡張子に合ったdata loaderを使ってデータ読み込み
-        loader = ct.SUPPORTED_EXTENSIONS[file_extension](path)
-        docs = loader.load()
-        docs_all.extend(docs)
+    if file_extension == ".csv":
+        # 社員名簿CSVは1ファイル=1ドキュメントに統合
+        lines = []
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            headers = [h.strip() for h in reader.fieldnames or []]
+            for row in reader:
+                kv = []
+                for h in headers:
+                    v = (row.get(h) or "").strip()
+                    if v:
+                        kv.append(f"{h}={v}")
+                if kv:
+                    lines.append("; ".join(kv))
+        merged_text = "【従業員名簿（統合）】\n" + "\n".join(lines)
+        doc = Document(
+            page_content=merged_text.strip(),
+            metadata={"source": path, "doc_type": "employee_roster", "no_split": True, "rows": len(lines)}
+        )
+        docs_all.append(doc)
+        return
 
+    # それ以外は従来通り
+    loader = ct.SUPPORTED_EXTENSIONS[file_extension](path)
+    docs = loader.load()
+    docs_all.extend(docs)
+
+# def file_load(path, docs_all):
+#     """
+#     ファイル内のデータ読み込み
+
+#     Args:
+#         path: ファイルパス
+#         docs_all: データソースを格納する用のリスト
+#     """
+#     # ファイルの拡張子を取得
+#     file_extension = os.path.splitext(path)[1]
+#     # ファイル名（拡張子を含む）を取得
+#     file_name = os.path.basename(path)
+
+#     # 想定していたファイル形式の場合のみ読み込む
+#     if file_extension in ct.SUPPORTED_EXTENSIONS:
+#         # ファイルの拡張子に合ったdata loaderを使ってデータ読み込み
+#         loader = ct.SUPPORTED_EXTENSIONS[file_extension](path)
+#         docs = loader.load()
+#         # docs_all.extend(docs)
+
+#         # CSVの場合は各行を1つのドキュメントに統合
+#         if file_extension == ".csv" and docs:
+#             # 各行のテキストを結合（改行区切り）
+#             merged_text = "\n".join([doc.page_content for doc in docs])
+#             # 必要なら、テキストの前処理（例：余分な空白除去など）
+#             merged_text = merged_text.strip()
+#             # 1つのドキュメントとして追加
+#             from langchain.schema import Document
+#             merged_doc = Document(page_content=merged_text, metadata={"source": path})
+#             # print(merged_doc)
+#             docs_all.append(merged_doc)
+#             # print(docs_all)
+#         else:
+#             docs_all.extend(docs)
 
 def adjust_string(s):
     """
